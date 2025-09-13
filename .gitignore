@@ -1,0 +1,34 @@
+# Ignore PyCharm / IntelliJ project files
+.idea/
+*.iml
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Checkpointing / runtime folders (auto-created at runtime)
+inputs/
+outputs/
+checkpoints/
+
+# Hugging Face / Gradio cache (optional)
+.gradio/
+hf_cache/
+
+# Environment files
+.env
+*.env
+.venv/
+venv/
+
+# OS-specific
+ehthumbs.db
+Icon?
