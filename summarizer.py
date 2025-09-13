@@ -1,55 +1,74 @@
-from transformers import pipeline, AutoTokenizer
-import math
+import os
+from transformers import pipeline
+import chardet
 
-def load_model(model_name="facebook/bart-large-cnn"):
-    summarizer = pipeline("summarization", model=model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    return summarizer, tokenizer
+class NarrativeSummarizer:
+    def __init__(self, model_name="facebook/bart-large-cnn", chunk_size=1000):
+        self.model_name = model_name
+        self.chunk_size = chunk_size
+        self.summarizer = pipeline("summarization", model=self.model_name)
+    
+    def chunk_text_token_based(self, text):
+        # Token-based chunking approximation based on whitespace split (could be improved with tokenizers)
+        words = text.split()
+        chunks = []
+        current_chunk = []
+        current_len = 0
+        max_tokens = 200  # approximate token limit per chunk (adjust as needed)
+        for word in words:
+            current_chunk.append(word)
+            current_len += 1
+            if current_len >= max_tokens:
+                chunks.append(" ".join(current_chunk))
+                current_chunk = []
+                current_len = 0
+        if current_chunk:
+            chunks.append(" ".join(current_chunk))
+        return chunks
 
-def chunk_text_by_tokens(text, tokenizer, max_tokens=1024):
-    tokens = tokenizer.encode(text)
-    chunks = []
-    for i in range(0, len(tokens), max_tokens):
-        chunk_tokens = tokens[i:i + max_tokens]
-        chunk_text = tokenizer.decode(chunk_tokens, skip_special_tokens=True)
-        chunks.append(chunk_text)
-    return chunks
+    def apply_custom_prompt(self, chunk, prompt_type):
+        if prompt_type == "Bread Only":
+            prompt = f"Transform the provided fictional narrative into a maximally compressed yet losslessly decompressible format optimized for LLM reconstruction. {chunk}"
+        elif prompt_type == "Butter Only":
+            prompt = f"Solid foundation, but let's refine the granularity. Your 4-subpoint structure creates artificial symmetry where organic complexity should flourish. {chunk}"
+        elif prompt_type == "Bread and Butter":
+            prompt = f"Transform the provided fictional narrative into a maximally compressed format. Then refine granularity for organic complexity. {chunk}"
+        else:
+            prompt = chunk
+        return prompt
 
-def get_summary_lengths(token_count, compression_level):
-    if compression_level == "High (90% compression)":
-        factor = 0.1
-    elif compression_level == "Medium (70% compression)":
-        factor = 0.3
-    else:
-        factor = 0.5
+    def summarize_chunk(self, chunk, prompt_type):
+        prompt = self.apply_custom_prompt(chunk, prompt_type)
+        summary = self.summarizer(prompt, max_length=150, min_length=50, do_sample=False)
+        return summary[0]['summary_text']
 
-    max_len = max(30, math.ceil(token_count * factor))
-    min_len = max(10, math.ceil(token_count * (factor / 2)))
-    return min_len, max_len
-
-def summarize_chunks(text, summarizer, tokenizer, compression_level="Medium (70% compression)", second_pass=True):
-    chunks = chunk_text_by_tokens(text, tokenizer, max_tokens=1024)
-    summaries = []
-
-    for chunk in chunks:
-        token_count = len(tokenizer.encode(chunk))
-        min_len, max_len = get_summary_lengths(token_count, compression_level)
+    def process_file(self, file_path, prompt_type, iterations=1):
+        # Read file robustly with encoding detection
         try:
-            summary = summarizer(chunk, max_length=max_len, min_length=min_len, do_sample=False)[0]['summary_text']
+            with open(file_path, 'rb') as f:
+                raw_data = f.read()
+            detected = chardet.detect(raw_data)
+            encoding = detected['encoding'] or 'utf-8'
+            text = raw_data.decode(encoding, errors='replace')
         except Exception as e:
-            summary = f"[Error summarizing chunk: {e}]"
-        summaries.append(summary.strip())
+            raise RuntimeError(f"Unable to read the file: {str(e)}")
 
-    combined_summary = "\n\n".join(summaries)
+        # Chunk the text token-wise
+        chunks = self.chunk_text_token_based(text)
+        condensed_chunks = []
 
-    # Second-pass summarization (global)
-    if second_pass and len(summaries) > 1:
-        token_count = len(tokenizer.encode(combined_summary))
-        min_len, max_len = get_summary_lengths(token_count, compression_level)
-        try:
-            final_summary = summarizer(combined_summary, max_length=max_len, min_length=min_len, do_sample=False)[0]['summary_text']
-            return final_summary
-        except Exception as e:
-            return combined_summary + f"\n\n[Second pass error: {e}]"
-    else:
-        return combined_summary
+        for chunk in chunks:
+            temp_chunk = chunk
+            for _ in range(iterations):
+                temp_chunk = self.apply_custom_prompt(temp_chunk, prompt_type)
+                temp_chunk = self.summarize_chunk(temp_chunk, prompt_type)
+            condensed_chunks.append(temp_chunk)
+
+        # Second pass summarization for global compression
+        combined = " ".join(condensed_chunks)
+        if iterations > 1:
+            final_summary = self.summarize_chunk(combined, prompt_type)
+        else:
+            final_summary = combined
+
+        return final_summary

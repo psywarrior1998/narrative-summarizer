@@ -1,44 +1,44 @@
 import gradio as gr
-from summarizer import load_model, summarize_chunks
+from summarizer import NarrativeSummarizer
 
-model_options = [
-    "facebook/bart-large-cnn",
-    "google/pegasus-xsum",
-    "allenai/led-base-16384",
-    "psyrishi/llama2-7b-summary"
-]
+# Initialize summarizer instance (can specify model etc here)
+summarizer = NarrativeSummarizer()
 
-def summarize_file(file_obj, compression_level, model_name):
+def run_summarization(file, prompt_type, iterations):
+    if not file:
+        return "❌ Error: No file uploaded."
     try:
-        text = file_obj.read().decode("utf-8")
-    except:
-        return "❌ Error: Unable to read the file. Please upload a valid UTF-8 text file."
-
-    summarizer, tokenizer = load_model(model_name)
-    result = summarize_chunks(text, summarizer, tokenizer, compression_level=compression_level, second_pass=True)
-    return result
+        iterations = int(iterations)
+        if iterations < 1:
+            return "❌ Error: Iterations must be >= 1."
+    except ValueError:
+        return "❌ Error: Iterations must be an integer."
+    
+    try:
+        # Run summarization
+        summary = summarizer.process_file(file.name, prompt_type, iterations)
+        return summary
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
 
 with gr.Blocks() as demo:
-    gr.Markdown("## 📚 Advanced Narrative Summarizer")
-    gr.Markdown("Summarize large `.txt` files using advanced transformers like Longformer, LLaMA2, and Pegasus.")
-
+    gr.Markdown("# Narrative Summarizer")
     with gr.Row():
-        file_input = gr.File(label="Upload .txt File", file_types=[".txt"])
-        compression_dropdown = gr.Dropdown(
-            choices=[
-                "High (90% compression)",
-                "Medium (70% compression)",
-                "Low (50% compression)"
-            ],
-            value="Medium (70% compression)",
-            label="Compression Level"
+        file_input = gr.File(label="Upload your .txt file")
+        prompt_dropdown = gr.Dropdown(
+            choices=["Bread Only", "Butter Only", "Bread and Butter"],
+            value="Bread Only",
+            label="Select Prompt Type"
         )
-        model_dropdown = gr.Dropdown(choices=model_options, value=model_options[0], label="Model")
+        iterations_input = gr.Number(value=1, label="Iterations", precision=0, minimum=1)
 
-    summarize_btn = gr.Button("Summarize")
+    output_text = gr.Textbox(label="Summary Output", lines=15)
 
-    output_text = gr.Textbox(label="📄 Summarized Output", lines=20, interactive=False)
+    run_button = gr.Button("Summarize")
+    run_button.click(
+        fn=run_summarization,
+        inputs=[file_input, prompt_dropdown, iterations_input],
+        outputs=output_text
+    )
 
-    summarize_btn.click(fn=summarize_file, inputs=[file_input, compression_dropdown, model_dropdown], outputs=output_text)
-
-demo.launch(share=True)
+demo.launch()
