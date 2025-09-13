@@ -4,17 +4,17 @@ emoji: 📚
 colorFrom: indigo
 colorTo: blue
 sdk: gradio
-sdk_version: 4.15.0
+sdk_version: 5.45.0
 app_file: app.py
 pinned: false
 license: mit
 tags:
-  - summarization
-  - text
-  - transformer
-  - bart
-  - compression
-  - gradio
+- summarization
+- text
+- transformer
+- bart
+- compression
+- gradio
 ---
 
 # 📚 Narrative Summarizer
@@ -161,4 +161,3 @@ Or [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0).
 ### 👋 Feedback & Contributions
 
 Feel free to fork the repo, create pull requests, or open issues if you'd like to contribute or improve the tool.
-
