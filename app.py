@@ -1,67 +1,44 @@
-import os
 import gradio as gr
-from summarizer import Summarizer
+from summarizer import load_model, summarize_chunks
 
-summarizer = Summarizer()
+model_options = [
+    "facebook/bart-large-cnn",
+    "google/pegasus-xsum",
+    "allenai/led-base-16384",
+    "psyrishi/llama2-7b-summary"
+]
 
-PROMPT_CHOICES = {
-    "Bread only": ["Bread"],
-    "Butter only": ["Butter"],
-    "Bread and Butter": ["Bread", "Butter"]
-}
-
-def summarize_file(file, prompt_type, iterations, max_length, min_length):
-    if not file:
-        return "No file uploaded."
-
-    os.makedirs("inputs", exist_ok=True)
-    input_path = os.path.join("inputs", file.name)
-    with open(input_path, 'wb') as f:
-        f.write(file.read())
-
-    output_path = os.path.join("outputs", f"{os.path.splitext(file.name)[0]}_summary.txt")
-    os.makedirs("outputs", exist_ok=True)
-
-    def progress_callback(done, total, eta):
-        return print(f"Progress: {done}/{total} | ETA: {int(eta)} sec")
-
+def summarize_file(file_obj, compression_level, model_name):
     try:
-        summary = summarizer.summarize_file(
-            input_path=input_path,
-            output_path=output_path,
-            prompt_types=PROMPT_CHOICES[prompt_type],
-            iterations=iterations,
-            max_length=max_length,
-            min_length=min_length,
-            progress_callback=progress_callback
-        )
-        return summary
-    except Exception as e:
-        return f"Error occurred during summarization: {str(e)}"
+        text = file_obj.read().decode("utf-8")
+    except:
+        return "❌ Error: Unable to read the file. Please upload a valid UTF-8 text file."
+
+    summarizer, tokenizer = load_model(model_name)
+    result = summarize_chunks(text, summarizer, tokenizer, compression_level=compression_level, second_pass=True)
+    return result
 
 with gr.Blocks() as demo:
-    gr.Markdown("## 📚 Narrative Compression Tool")
+    gr.Markdown("## 📚 Advanced Narrative Summarizer")
+    gr.Markdown("Summarize large `.txt` files using advanced transformers like Longformer, LLaMA2, and Pegasus.")
 
     with gr.Row():
         file_input = gr.File(label="Upload .txt File", file_types=[".txt"])
-        prompt_type = gr.Dropdown(
-            choices=list(PROMPT_CHOICES.keys()),
-            label="Select Prompt",
-            value="Bread only"
+        compression_dropdown = gr.Dropdown(
+            choices=[
+                "High (90% compression)",
+                "Medium (70% compression)",
+                "Low (50% compression)"
+            ],
+            value="Medium (70% compression)",
+            label="Compression Level"
         )
+        model_dropdown = gr.Dropdown(choices=model_options, value=model_options[0], label="Model")
 
-    iterations = gr.Slider(1, 5, value=1, step=1, label="Iterations")
-    max_length = gr.Slider(50, 300, value=150, step=10, label="Max Summary Length")
-    min_length = gr.Slider(20, 100, value=50, step=10, label="Min Summary Length")
+    summarize_btn = gr.Button("Summarize")
 
-    submit = gr.Button("Summarize")
+    output_text = gr.Textbox(label="📄 Summarized Output", lines=20, interactive=False)
 
-    output = gr.Textbox(label="Condensed Summary", lines=15)
+    summarize_btn.click(fn=summarize_file, inputs=[file_input, compression_dropdown, model_dropdown], outputs=output_text)
 
-    submit.click(
-        summarize_file,
-        inputs=[file_input, prompt_type, iterations, max_length, min_length],
-        outputs=output
-    )
-
-demo.launch()
+demo.launch(share=True)

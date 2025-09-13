@@ -1,75 +1,55 @@
-import os
-import json
-import time
-from transformers import pipeline
-import torch
+from transformers import pipeline, AutoTokenizer
+import math
 
-class Summarizer:
-    def __init__(self, model_name="facebook/bart-large-cnn", chunk_size=1000, batch_size=4):
-        self.model_name = model_name
-        self.chunk_size = chunk_size
-        self.batch_size = batch_size
-        self.device = 0 if torch.cuda.is_available() else -1
-        self.summarizer = pipeline("summarization", model=model_name, device=self.device)
+def load_model(model_name="facebook/bart-large-cnn"):
+    summarizer = pipeline("summarization", model=model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    return summarizer, tokenizer
 
-        os.makedirs("checkpoints", exist_ok=True)
+def chunk_text_by_tokens(text, tokenizer, max_tokens=1024):
+    tokens = tokenizer.encode(text)
+    chunks = []
+    for i in range(0, len(tokens), max_tokens):
+        chunk_tokens = tokens[i:i + max_tokens]
+        chunk_text = tokenizer.decode(chunk_tokens, skip_special_tokens=True)
+        chunks.append(chunk_text)
+    return chunks
 
-    def _chunk_text(self, text):
-        return [text[i:i + self.chunk_size] for i in range(0, len(text), self.chunk_size)]
+def get_summary_lengths(token_count, compression_level):
+    if compression_level == "High (90% compression)":
+        factor = 0.1
+    elif compression_level == "Medium (70% compression)":
+        factor = 0.3
+    else:
+        factor = 0.5
 
-    def _apply_prompt(self, chunk, prompt_type):
-        if prompt_type == "Bread":
-            return f"Transform the provided fictional narrative into a maximally compressed yet losslessly decompressible format optimized for LLM reconstruction. {chunk}"
-        elif prompt_type == "Butter":
-            return f"Solid foundation, but let's refine the granularity. Your 4-subpoint structure creates artificial symmetry where organic complexity should flourish. {chunk}"
-        else:
-            return chunk
+    max_len = max(30, math.ceil(token_count * factor))
+    min_len = max(10, math.ceil(token_count * (factor / 2)))
+    return min_len, max_len
 
-    def summarize_file(self, input_path, output_path, prompt_types, iterations=1,
-                       max_length=150, min_length=50, progress_callback=None):
-        with open(input_path, 'r', encoding='utf-8') as f:
-            text = f.read()
+def summarize_chunks(text, summarizer, tokenizer, compression_level="Medium (70% compression)", second_pass=True):
+    chunks = chunk_text_by_tokens(text, tokenizer, max_tokens=1024)
+    summaries = []
 
-        chunks = self._chunk_text(text)
-        total_chunks = len(chunks)
-        processed_chunks = 0
-        summaries = []
-        start_time = time.time()
+    for chunk in chunks:
+        token_count = len(tokenizer.encode(chunk))
+        min_len, max_len = get_summary_lengths(token_count, compression_level)
+        try:
+            summary = summarizer(chunk, max_length=max_len, min_length=min_len, do_sample=False)[0]['summary_text']
+        except Exception as e:
+            summary = f"[Error summarizing chunk: {e}]"
+        summaries.append(summary.strip())
 
-        # Checkpoint recovery
-        checkpoint_path = os.path.join("checkpoints", os.path.basename(input_path) + ".json")
-        if os.path.exists(checkpoint_path):
-            with open(checkpoint_path, 'r', encoding='utf-8') as cp:
-                checkpoint_data = json.load(cp)
-                summaries = checkpoint_data.get("summaries", [])
-                processed_chunks = checkpoint_data.get("processed_chunks", 0)
+    combined_summary = "\n\n".join(summaries)
 
-        for i in range(processed_chunks, total_chunks):
-            chunk = chunks[i]
-            for _ in range(iterations):
-                for p in prompt_types:
-                    chunk = self._apply_prompt(chunk, p)
-
-            summary = self.summarizer(chunk, max_length=max_length, min_length=min_length, do_sample=False)[0]['summary_text']
-            summaries.append(summary)
-            processed_chunks += 1
-
-            # Save checkpoint
-            with open(checkpoint_path, 'w', encoding='utf-8') as cp:
-                json.dump({
-                    "processed_chunks": processed_chunks,
-                    "summaries": summaries
-                }, cp)
-
-            if progress_callback:
-                elapsed = time.time() - start_time
-                avg = elapsed / processed_chunks
-                eta = avg * (total_chunks - processed_chunks)
-                progress_callback(processed_chunks, total_chunks, eta)
-
-        # Save final result
-        final_summary = "\n".join(summaries)
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(final_summary)
-
-        return final_summary
+    # Second-pass summarization (global)
+    if second_pass and len(summaries) > 1:
+        token_count = len(tokenizer.encode(combined_summary))
+        min_len, max_len = get_summary_lengths(token_count, compression_level)
+        try:
+            final_summary = summarizer(combined_summary, max_length=max_len, min_length=min_len, do_sample=False)[0]['summary_text']
+            return final_summary
+        except Exception as e:
+            return combined_summary + f"\n\n[Second pass error: {e}]"
+    else:
+        return combined_summary
