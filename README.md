@@ -43,7 +43,7 @@ A Gradio-based app to summarize large narrative `.txt` files using transformer m
    ```bash
    git clone https://huggingface.co/spaces/psyrishi/narrative-summarizer
    cd narrative-summarizer
-````
+   ```
 
 2. Install dependencies:
 
