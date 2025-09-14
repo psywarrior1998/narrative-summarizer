@@ -3,7 +3,7 @@ from transformers import pipeline
 import torch
 import os
 import chardet
-from summarizer import NarrativeSummarizer # <-- Import the core logic
+from core.summarizer import NarrativeSummarizer
 
 # Models available
 MODEL_OPTIONS = [
