@@ -3,7 +3,7 @@ from transformers import pipeline
 import torch
 import os
 import chardet
-from core.summarizer import NarrativeSummarizer
+from summarizer import NarrativeSummarizer # <-- Import the core logic
 
 # Models available
 MODEL_OPTIONS = [
@@ -19,7 +19,7 @@ PROMPT_OPTIONS = [
     "Bread and Butter"
 ]
 
-def run_app(file_obj, text_input, model_name, prompt_type, iterations):
+def run_app(file_obj, text_input, model_name, prompt_type, iterations, progress=gr.Progress()):
     # Determine the input source: file or direct text
     if file_obj is not None:
         try:
@@ -38,8 +38,36 @@ def run_app(file_obj, text_input, model_name, prompt_type, iterations):
     # Instantiate the summarizer and process the text
     try:
         summarizer = NarrativeSummarizer(model_name=model_name)
-        result = summarizer.process_text(text, prompt_type, iterations)
-        return result
+        
+        # --- Start of new progress tracking logic ---
+        # Chunk the text first to get the total number of chunks
+        chunks = summarizer.chunk_text_tokenwise(text, max_tokens=512, overlap=50)
+        total_chunks = len(chunks)
+        condensed_chunks = []
+        progress(0, desc="Loading Model...")
+
+        # First pass summarization over all chunks
+        progress(0, desc="Summarizing Chunks (Pass 1 of 1)...")
+        for i, chunk in enumerate(chunks):
+            progress((i + 1) / total_chunks, desc=f"Processing Chunk {i + 1}/{total_chunks}...")
+            temp_chunk = chunk
+            for _ in range(iterations):
+                temp_chunk = summarizer.summarize_chunk(temp_chunk, prompt_type)
+            condensed_chunks.append(temp_chunk)
+
+        # Second pass for global compression
+        combined = " ".join(condensed_chunks)
+        # We perform a final summary only if the combined text is large, for efficiency
+        if len(combined.split()) > summarizer.tokenizer.model_max_length * 0.8:
+            progress(1.0, desc="Performing Final Summarization Pass...")
+            final_summary = summarizer.summarize_chunk(combined, prompt_type)
+        else:
+            final_summary = combined
+
+        progress(1.0, desc="Summarization Complete!")
+        # --- End of new progress tracking logic ---
+
+        return final_summary
     except Exception as e:
         return f"An error occurred during summarization: {str(e)}"
 
