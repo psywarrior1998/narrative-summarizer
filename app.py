@@ -2,6 +2,7 @@ import gradio as gr
 from transformers import pipeline
 import torch
 import os
+import chardet
 
 # Models available
 MODEL_OPTIONS = [
@@ -51,11 +52,20 @@ def run_app(file_obj, model_name, prompt_type, iterations):
     if file_obj is None:
         return "❌ Please upload a valid text file."
 
-    # Read file content safely
     try:
-        text = file_obj.read().decode("utf-8")
-    except Exception:
-        return "❌ Unable to read the file. Please upload a valid UTF-8 encoded text file."
+        # Read the file in binary mode to detect encoding
+        with open(file_obj.name, 'rb') as f:
+            raw_data = f.read()
+
+        # Use chardet to detect the file's encoding
+        detected_encoding = chardet.detect(raw_data)['encoding']
+
+        # Decode the binary data using the detected encoding
+        encoding = detected_encoding if detected_encoding else 'utf-8'
+        text = raw_data.decode(encoding, errors='replace')
+
+    except Exception as e:
+        return f"❌ Unable to read the file: {str(e)}. Please check the file's integrity."
 
     # Load summarization pipeline & tokenizer
     summarizer = pipeline("summarization", model=model_name, device=0 if torch.cuda.is_available() else -1)
