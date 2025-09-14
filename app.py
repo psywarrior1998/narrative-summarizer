@@ -3,7 +3,7 @@ import torch
 import os
 import chardet
 import time
-from summarizer import NarrativeSummarizer # <-- Import the core logic
+from core.summarizer import NarrativeSummarizer # <-- Import the core logic
 
 # Models available
 MODEL_OPTIONS = [
